@@ -1,0 +1,9 @@
+streamlit
+torch
+transformers
+pandas
+pillow
+numpy
+plotly
+sentencepiece
+protobuf
