@@ -9,6 +9,7 @@ import plotly.express as px
 from datetime import datetime
 import json
 import io
+import os
 
 # Page config
 st.set_page_config(
@@ -70,7 +71,7 @@ if 'predictions_history' not in st.session_state:
 if 'device' not in st.session_state:
     st.session_state.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Food-41 class names (you can update this with your actual classes)
+# Default Food-41 class names
 FOOD_CLASSES = [
     'apple_pie', 'baby_back_ribs', 'baklava', 'beef_carpaccio', 'beef_tartare',
     'beet_salad', 'beignets', 'bibimbap', 'bread_pudding', 'breakfast_burrito',
@@ -102,24 +103,27 @@ with st.sidebar:
     # Model loading section
     st.subheader("📂 Load Model")
     
-    model_source = st.radio(
-        "Model Source:",
-        ["Local Path", "Hugging Face Hub"],
-        help="Choose where to load your model from"
+    # Default to your local model path
+    default_path = r"C:\Users\BISAM AHMAD\Downloads\vit-food-model"
+    
+    model_path = st.text_input(
+        "Model Directory Path:",
+        value=default_path,
+        help="Enter the path to your fine-tuned model directory"
     )
     
-    if model_source == "Local Path":
-        model_path = st.text_input(
-            "Model Directory Path:",
-            placeholder="./vit-food-classifier",
-            help="Enter the path to your fine-tuned model directory"
-        )
-    else:
-        model_path = st.text_input(
-            "Model Name:",
-            value="google/vit-base-patch16-224",
-            help="Enter the Hugging Face model name"
-        )
+    # Check if path exists
+    if model_path and os.path.exists(model_path):
+        st.success(f"✅ Path exists: {model_path}")
+        
+        # Check for required files
+        required_files = ['config.json', 'pytorch_model.bin']
+        missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_path, f))]
+        
+        if missing_files:
+            st.warning(f"⚠️ Missing files: {', '.join(missing_files)}")
+    elif model_path:
+        st.error(f"❌ Path does not exist: {model_path}")
     
     # Custom class names
     use_custom_classes = st.checkbox("Use custom class names", value=False)
@@ -136,23 +140,29 @@ with st.sidebar:
     
     with col1:
         if st.button("🔄 Load Model"):
-            if model_path:
+            if model_path and os.path.exists(model_path):
                 with st.spinner("Loading model..."):
                     try:
+                        # Load processor and model
                         st.session_state.processor = ViTImageProcessor.from_pretrained(model_path)
                         st.session_state.model = ViTForImageClassification.from_pretrained(model_path)
                         st.session_state.model.to(st.session_state.device)
                         st.session_state.model.eval()
                         
-                        # Update class names if custom
+                        # Load class names
                         if use_custom_classes:
                             st.session_state.class_names = [
                                 line.strip() for line in custom_classes_text.split('\n') 
                                 if line.strip()
                             ]
                         else:
+                            # Try to load from saved JSON file
+                            class_names_path = os.path.join(model_path, 'class_names.json')
+                            if os.path.exists(class_names_path):
+                                with open(class_names_path, 'r') as f:
+                                    st.session_state.class_names = json.load(f)
                             # Try to get from model config
-                            if hasattr(st.session_state.model.config, 'id2label'):
+                            elif hasattr(st.session_state.model.config, 'id2label'):
                                 st.session_state.class_names = [
                                     st.session_state.model.config.id2label[i] 
                                     for i in range(len(st.session_state.model.config.id2label))
@@ -164,8 +174,9 @@ with st.sidebar:
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Error loading model: {str(e)}")
+                        st.error("Make sure you've saved the model correctly using model.save_pretrained()")
             else:
-                st.warning("⚠️ Please enter a model path")
+                st.warning("⚠️ Please enter a valid model path")
     
     with col2:
         if st.button("🗑️ Clear"):
@@ -184,6 +195,7 @@ with st.sidebar:
             st.write(f"**Parameters:** {num_params:,}")
             st.write(f"**Classes:** {st.session_state.model.config.num_labels}")
             st.write(f"**Image Size:** 224x224")
+            st.write(f"**Device:** {st.session_state.device}")
     else:
         st.warning("⚠️ Model: **Not Loaded**")
     
@@ -223,22 +235,31 @@ if st.session_state.model is None:
     with st.expander("📖 How to use this app"):
         st.markdown("""
         ### Getting Started
-        1. **Load your model** from the sidebar:
-           - Use your fine-tuned model path
-           - Or use the pre-trained ViT model
-        2. **Upload food images** (JPG, PNG, JPEG)
-        3. **View predictions** with confidence scores
-        4. **Explore history** and download results
+        1. **Save your model first** (if you haven't already):
+           - Open your Jupyter notebook: `q3-finetunningnadeem.ipynb`
+           - Add the save code at the end (see documentation)
+           - Run it to save your model
+        
+        2. **Load your model** from the sidebar:
+           - Default path is already set to: `C:\\Users\\BISAM AHMAD\\Downloads\\vit-food-model`
+           - Click "Load Model" button
+        
+        3. **Upload food images** (JPG, PNG, JPEG)
+        
+        4. **View predictions** with confidence scores
+        
+        ### Required Model Files
+        Your model directory should contain:
+        - `config.json` - Model configuration
+        - `pytorch_model.bin` or `model.safetensors` - Model weights
+        - `preprocessor_config.json` - Image processor config
+        - `class_names.json` (optional) - Class labels
         
         ### Tips
         - Upload clear, well-lit food images for best results
         - Multiple images can be processed in batch mode
         - Adjust Top-K to see more or fewer predictions
         - Use confidence threshold to filter low-confidence predictions
-        
-        ### Supported Formats
-        - JPEG, JPG, PNG
-        - Recommended: Square images, well-lit, centered food items
         """)
 
 else:
@@ -264,7 +285,7 @@ else:
             use_sample = st.checkbox("Or use a sample image")
             
             if use_sample:
-                st.info("📝 Note: In production, replace this with actual sample images")
+                st.info("📝 Note: This is a sample colored image for testing")
                 # Create a sample colored image
                 sample_img = Image.new('RGB', (224, 224), color=(255, 200, 100))
                 uploaded_file = io.BytesIO()
@@ -370,6 +391,8 @@ else:
                         
                         except Exception as e:
                             st.error(f"❌ Error during prediction: {str(e)}")
+                            import traceback
+                            st.error(traceback.format_exc())
             else:
                 st.info("👆 Upload an image to see predictions")
     
@@ -423,7 +446,7 @@ else:
                     except Exception as e:
                         batch_results.append({
                             'Image': uploaded_file.name,
-                            'Prediction': 'Error',
+                            'Prediction': f'Error: {str(e)}',
                             'Confidence (%)': 0
                         })
                     
@@ -608,6 +631,6 @@ st.divider()
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 1rem;'>
     <p>🍔 ViT Food Classifier | Powered by Vision Transformer | Built with Streamlit</p>
-    <p style='font-size: 0.8rem;'>Fine-tuned on Food-41 Dataset</p>
+    <p style='font-size: 0.8rem;'>Using Your Custom Fine-tuned Model</p>
 </div>
 """, unsafe_allow_html=True)
