@@ -104,7 +104,7 @@ with st.sidebar:
     st.subheader("📂 Load Model")
     
     # Default to your local model path
-    default_path = r"C:\Users\BISAM AHMAD\Downloads\vit-food-model"
+    default_path = r"C:\Users\BISAM AHMAD\Downloads\q3-finetunningnadeem"
     
     model_path = st.text_input(
         "Model Directory Path:",
